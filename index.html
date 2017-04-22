@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <meta name="robots" content="noindex, nofollow">
+        <meta name="googlebot" content="noindex, nofollow">
+        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+        <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?libraries=geometry,places&ext=.js"></script>
+        <!--<script type="text/javascript" src="https://getfirebug.com/firebug-lite-debug.js"></script>-->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/3.5.3/math.js"></script>
+        <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+        <script>
+            $( function() {
+              $( "#slider-range" ).slider({
+                range: true,
+                min: 1970,
+                max: 2017,
+                values: [ 1970, 2017 ],
+                slide: function( event, ui ) {
+                  $( "#years" ).val( ui.values[ 0 ] + "-" + ui.values[ 1 ] );
+                }
+              });
+              $( "#years" ).val( $( "#slider-range" ).slider( "values", 0 ) +
+                "-" + $( "#slider-range" ).slider( "values", 1 ) );
+            } );
+        </script>
+        <style type="text/css">
+            html,
+            body,
+            #map_canvas {
+            height: 400px;
+            width: 100%;
+            margin: 0px;
+            padding: 0px
+            }
+        </style>
+        <style>
+            #wrapper { position: relative; }
+            #over_map { position: absolute; 
+                top: 10px; 
+                left: 20px; 
+                z-index: 99; 
+                background-color: #FFFFFF; 
+                border-radius: 5px;
+                padding: 7px;}
+            #month {width: 100%;}
+            .ui-slider .ui-slider-handle { width: 10px; margin-left: -6px; }
+            .ui-slider {margin: 5px;}
+            
+        </style>
+        <title>Birds Map</title>
+        <script type='text/javascript'>
+            var map;
+            var gribBlockSize = 100000;
+            var infoWindow = new google.maps.InfoWindow();
+            var startingLatLng = new google.maps.LatLng(42.1, 19.7);
+            var width = 141;
+            var height = 45;
+            var polyArr = [];
+            var countArr = [];
+            var polyCoord = new Array(width * height);
+            var jsonPolyCoord;
+            var qNumber = 5;
+            var q = new Array(qNumber).fill(0); // Quantiles
+            
+            $(function () {
+                $("#map_canvas").css("height", $(window).height());
+            });
+            google.maps.event.addDomListener(window, "load", initialize);
+            
+            
+            function initialize() {
+
+                var rectangle;
+                var myOptions = {
+                    zoom: 3,
+                    center: new google.maps.LatLng(65.4, 94.3),
+                    mapTypeControl: false,
+                    navigationControl: false,
+                    mapTypeId: google.maps.MapTypeId.ROADMAP
+                };
+                map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
+                drawRects();
+            }
+                
+            function drawRects() {
+
+                polyArr.length = 0;
+                countArr.length = 0;
+                polyArr = new Array(width * height);
+                countArr = new Array(width * height).fill(0);
+                var NW = startingLatLng;
+                // define horizontal lines
+                var longitudes = [];
+                longitudes.push(NW.lng());
+                for (var i = 0; i < width; i++) {
+                    var longitude = google.maps.geometry.spherical.computeOffset(NW, gribBlockSize, 90).lng();
+                    longitudes.push(longitude);
+                    NW = new google.maps.LatLng(NW.lat(), longitude);
+                }
+                var NW = startingLatLng;
+                // for each longitude, make a column of squares
+                var k = 0;
+                for (var i = 0; i < longitudes.length - 1; i++) {
+                    NW = new google.maps.LatLng(startingLatLng.lat(), longitudes[i]);
+                    for (var j = 0; j < height; j++) {
+                        var south = NW.lat();
+                        var north = google.maps.geometry.spherical.computeOffset(NW, gribBlockSize, 0).lat();
+                        var east = longitudes[i + 1];
+                        var west = longitudes[i];
+                        var corner1 = new google.maps.LatLng(north, east); // NE
+                        var corner2 = new google.maps.LatLng(south, east); // SE
+                        var corner3 = new google.maps.LatLng(south, west); // SW
+                        var corner4 = new google.maps.LatLng(north, west); // NW
+
+                        var polygonOverall = new google.maps.Polygon({
+                        strokeOpacity: 0.25,
+                        strokeWeight: 0.5,
+                        fillColor: "teal",
+                        fillOpacity: 0,
+                        map: map,
+                        paths: [corner1, corner2, corner3, corner4],
+                        count: 0,
+                        orders: 0,
+                        species: 0
+                        });
+            
+
+                        polyArr[k] = polygonOverall;
+                        k++;
+                        bindWindow(polygonOverall, k);
+                        NW = new google.maps.LatLng(google.maps.geometry.spherical.computeOffset(NW, gribBlockSize, 0).lat(), longitudes[i]);
+                    }
+                }
+            
+                var polyCoord = new Array(width * height); // Array of polygons' coordinates
+                for (var i = 0; i < polyCoord.length; i++){
+                    polyCoord[i] = polyArr[i].getPath().getArray()
+                }
+            
+                jsonPolyCoord = JSON.stringify(polyCoord);
+            }
+            
+            function bindWindow(rectangle, num) { // Show info about a polygon
+
+                google.maps.event.addListener(rectangle, 'click', function(event) {
+                    infoWindow.setContent("you clicked on rectangle " + num + "<br>" + rectangle.getPath().getArray() + "<br> Records: " + rectangle.count + "<br> Orders: " + rectangle.orders + "<br> Species: " + rectangle.species);
+                    infoWindow.setPosition(event.latLng);
+                    infoWindow.open(map);
+                });
+            
+            }
+            
+            function getResponse() { 
+
+                $.ajax({
+                    type: "POST",
+                    data: {
+                        "month": $("#month").val(),
+                        "years": $("#years").val(),
+                        "jsonPolyCoord": jsonPolyCoord
+                    },
+                    url: "response.php",
+                    dataType: "json",
+                    success: function(JSONObject) {
+                        var arr = $.map(JSONObject, function(el) { return el });
+                        for (index = 0; index < polyArr.length; ++index) {
+                            polyArr[index].count = 0;
+                            countArr[index] = 0;
+                        }
+
+                        for (index = 0; index < polyArr.length; ++index) {
+                            polyArr[index].count = arr[index];
+                            polyArr[index].orders = JSONObject.orders[index];
+                            polyArr[index].species = JSONObject.species[index];
+                            countArr[index] = arr[index];
+                        }
+
+                        countArr = countArr.filter(function(e) { return e !== 0 });
+                        q[0] = math.quantileSeq(countArr, 0.15);
+                        q[1] = math.quantileSeq(countArr, 0.25);
+                        q[2] = math.quantileSeq(countArr, 0.5);
+                        q[3] = math.quantileSeq(countArr, 0.75);
+                        q[4] = math.quantileSeq(countArr, 0.95);
+                        colorRects(polyArr, q);
+                    }
+                });
+            }
+            
+            function colorRects(rectArr, quant) {
+
+                for (index = 0; index < rectArr.length; ++index) {
+                    if (rectArr[index].count > quant[4]) {
+                        rectArr[index].setOptions({
+                        fillOpacity: 1.0
+                        });
+                    } else if (rectArr[index].count > quant[3]) {
+                        rectArr[index].setOptions({
+                        fillOpacity: 0.75
+                        });
+                    } else if (rectArr[index].count > quant[2]) {
+                        rectArr[index].setOptions({
+                        fillOpacity: 0.5
+                        });
+                    } else if (rectArr[index].count > quant[1]) {
+                        rectArr[index].setOptions({
+                        fillOpacity: 0.25
+                        });
+                    } else if (rectArr[index].count > quant[0]) {
+                        rectArr[index].setOptions({
+                        fillOpacity: 0.15
+                        });
+                    } else {
+                        rectArr[index].setOptions({
+                        fillOpacity: 0
+                        });
+                    }
+                }
+            }
+            
+            function showOverall() {
+
+                for (index = 0; index < polyArr.length; ++index) {
+                    polyArr[index].setMap(map);
+                }
+            }
+            
+            function computeAndShow() {
+
+                getResponse();
+                showOverall();
+            }
+            
+        </script>
+    </head>
+    <body>
+        <div id="wrapper">
+            <div id="map_canvas"></div>
+            <div id="over_map">
+                <p>
+                    <select id="month" name="month">
+                        <option value="3,4,5">Spring migration (Mar-May)</option>
+                        <option value="6,7">Breeding (Jun-Jul)</option>
+                        <option value="8,9,10,11">Fall migration (Aug-Nov)</option>
+                        <option value="1,2,12">Winter</option>
+                        <option value="1">January</option>
+                        <option value="2">February</option>
+                        <option value="3">March</option>
+                        <option value="4">April</option>
+                        <option value="5">May</option>
+                        <option value="6">June</option>
+                        <option value="7">July</option>
+                        <option value="8">August</option>
+                        <option value="9">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                        <option value="1,2,3,4,5,6,7,8,9,10,11,12">All</option>
+                    </select>
+                </p>
+                <p>
+                    <label for="years">Years:</label>
+                    <input type="text" id="years" readonly style="border:0; color:#f6931f;">
+                <div id="slider-range"></div>
+            </p>
+            <p>
+                <button type="button" onclick="computeAndShow();">Go</button>
+            </p>
+            </div>
+        </div>
+    </body>
+</html>
